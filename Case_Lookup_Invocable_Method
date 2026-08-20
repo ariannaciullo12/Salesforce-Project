@@ -1,0 +1,81 @@
+public class CaseLookup {
+// Request class: Takes the Case_Number__c
+    public class Request {
+        @InvocableVariable(required=true)
+        public String caseNumber; // e.g., "CN-{0000}"
+    }
+
+    // Response class with string variables
+    public class Response {
+        @InvocableVariable public String caseNumber;
+        @InvocableVariable public String name;
+        @InvocableVariable public String priority;
+        @InvocableVariable public String description;
+        @InvocableVariable public String status;
+        @InvocableVariable public String escalationFlag;
+        @InvocableVariable public String resolutionNote;
+
+
+        @InvocableVariable public String message; // status or error message
+    }
+
+    @InvocableMethod(label='Get Case Info by Case Number' 
+                     description='Returns full case details for a given Case_Number__c')
+    public static List<Response> getCaseDetails(List<Request> requests) {
+        List<Response> results = new List<Response>();
+
+        try {
+            // Collect case numbers from request
+            Set<String> caseNumbers = new Set<String>();
+            for (Request req : requests) {
+                if (req != null && String.isNotBlank(req.caseNumber)) {
+                    caseNumbers.add(req.caseNumber.trim());
+                }
+            }
+
+            if (caseNumbers.isEmpty()) {
+                Response noInput = new Response();
+                noInput.message = 'No Case Number provided.';
+                results.add(noInput);
+                return results;
+            }
+
+            // Query the cases 
+            List<Customer_Case__c> cases = [
+                SELECT Case_Number__c, Name, Priority__c, Description__c,
+                       Status__c, Escalated__c, Resolution_Note__c
+                FROM Customer_Case__c
+                WHERE Case_Number__c IN :caseNumbers LIMIT 1
+            ];
+
+            if (cases.isEmpty()) {
+                Response notFound = new Response();
+                notFound.message = 'No matching case found for the given Case Number.';
+                results.add(notFound);
+                return results;
+            }
+
+            // Format and return response
+            for (Customer_Case__c cs : cases) {
+                Response resp = new Response();
+                resp.caseNumber = cs.Case_Number__c;
+                resp.name = cs.Name;
+                resp.priority = cs.Priority__c;
+                resp.description = cs.Description__c;
+                resp.status = cs.Status__c;
+                resp.escalationFlag = cs.Escalated__c != null ? String.valueOf(cs.Escalated__c) : null;
+                resp.resolutionNote = cs.Resolution_Note__c; 
+
+                resp.message = 'Case found successfully.';
+                results.add(resp);
+            }
+
+        } catch (Exception ex) {
+            Response errorResp = new Response();
+            errorResp.message = 'An error occurred while retrieving case details: ' + ex.getMessage();
+            results.add(errorResp);
+        }
+
+        return results;
+    }
+}
