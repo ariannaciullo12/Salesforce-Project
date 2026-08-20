@@ -1,0 +1,129 @@
+public class MicroDeskCaseCreator {
+
+    //INPUT
+    public class Request {
+        @InvocableVariable(required=true)
+        public String customerId;
+
+        @InvocableVariable(required=true)
+        public String description;
+    }
+
+    //OUTPUT
+    public class Response {
+        @InvocableVariable public String caseId;
+        @InvocableVariable public String caseName;
+        @InvocableVariable public String status;
+        @InvocableVariable public String description;
+        @InvocableVariable public String message;
+    }
+
+    @InvocableMethod(label='Create MicroDesk Case'
+                     description='Creates a case for MicroDesk Service Agent')
+    public static List<Response> createCase(List<Request> requests) {
+
+        List<Response> results = new List<Response>();
+
+        try {
+
+            // Collect customer IDs
+            Set<String> customerIds = new Set<String>();
+            for (Request r : requests) {
+                if (r != null && String.isNotBlank(r.customerId)) {
+                    customerIds.add(r.customerId.trim());
+                }
+            }
+
+            if (customerIds.isEmpty()) {
+                Response res = new Response();
+                res.message = 'Customer ID is required.';
+                results.add(res);
+                return results;
+            }
+
+            // Get Customer record
+            MDCustomer__c cust = [
+                SELECT Id, Name, Customer_ID__c
+                FROM MDCustomer__c
+                WHERE Customer_ID__c IN :customerIds
+                LIMIT 1
+            ];
+
+            if (cust == null) {
+                Response res = new Response();
+                res.message = 'No customer found for given Customer ID.';
+                results.add(res);
+                return results;
+            }
+
+            // Create Case Name (Customer Name + Date)
+            String caseName = cust.Name + ' - ' + Date.today().format();
+            
+            //Determine priority
+            String priority =
+                determinePriority(requests[0].description);
+
+            // Create Case
+            Customer_Case__c cs = new Customer_Case__c();
+            cs.MDCustomer__c = cust.Id; // IMPORTANT: lookup uses record Id
+            cs.Description__c = requests[0].description;
+            cs.Status__c = 'New';
+            cs.Origin__c = 'Web';
+            cs.Priority__c = priority;
+            cs.Name = caseName;
+            cs.Created_Datetime__c = System.now();
+
+            insert cs;
+
+            // Return response
+            Response res = new Response();
+            res.caseId = cs.Id;
+            res.caseName = cs.Name;
+            res.status = cs.Status__c;
+            res.description = cs.Description__c;
+            res.message = 'Case created successfully.';
+
+            results.add(res);
+
+        } catch (Exception e) {
+
+            Response res = new Response();
+            res.message = 'Error creating case: ' + e.getMessage();
+            results.add(res);
+        }
+
+        return results;
+    }
+    
+    //PRIORITY LOGIC
+private static String determinePriority(String description) {
+
+        if (String.isBlank(description)) {
+            return 'Low';
+        }
+
+        //HIGH PRIORITY
+        if (
+            description.toLowerCase().contains('urgent') ||
+            description.toLowerCase().contains('critical') ||
+            description.toLowerCase().contains('system down') ||
+            description.toLowerCase().contains('outage') ||
+            description.toLowerCase().contains('cannot login') ||
+            description.toLowerCase().contains('cannot access')
+        ) {
+            return 'High';
+        }
+
+        //MEDIUM PRIORITY
+        if (
+            description.toLowerCase().contains('slow') ||
+            description.toLowerCase().contains('delayed') ||
+            description.toLowerCase().contains('lag')
+        ) {
+            return 'Medium';
+        }
+
+        // DEFAULT
+        return 'Low';
+    }
+}
